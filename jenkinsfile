@@ -1,0 +1,69 @@
+pipeline {
+agent any
+
+```
+environment {
+    IMAGE_NAME = "myapp"
+    CONTAINER_NAME = "myapp-container"
+}
+
+stages {
+
+    stage('Checkout') {
+        steps {
+            checkout scm
+        }
+    }
+
+    stage('Select Deployment Server') {
+        steps {
+            script {
+                if (env.BRANCH_NAME == "prod") {
+                    env.SERVER_IP = "13.204.80.183"
+                } else if (env.BRANCH_NAME == "dev") {
+                    env.SERVER_IP = "65.0.122.50"
+                } else if (env.BRANCH_NAME == "stage") {
+                    env.SERVER_IP = "113.204.87.161"
+                } else {
+                    error("No deployment server configured for branch ${env.BRANCH_NAME}")
+                }
+            }
+        }
+    }
+
+    stage('Deploy') {
+        steps {
+            sh """
+            ssh -o StrictHostKeyChecking=no ec2-user@${SERVER_IP} '
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
+                docker rmi ${IMAGE_NAME}:latest || true
+
+                cd ~/NewMultibranchProject
+
+                git pull origin ${BRANCH_NAME}
+
+                docker build -t ${IMAGE_NAME}:latest .
+
+                docker run -d \
+                    --name ${CONTAINER_NAME} \
+                    -p 80:80 \
+                    ${IMAGE_NAME}:latest
+            '
+            """
+        }
+    }
+}
+
+post {
+    success {
+        echo "Deployment successful for ${env.BRANCH_NAME} to ${env.SERVER_IP}"
+    }
+
+    failure {
+        echo "Deployment failed for ${env.BRANCH_NAME}"
+    }
+}
+```
+
+}
