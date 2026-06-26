@@ -1,69 +1,93 @@
 pipeline {
-agent any
+    agent any
 
-```
-environment {
-    IMAGE_NAME = "myapp"
-    CONTAINER_NAME = "myapp-container"
-}
-
-stages {
-
-    stage('Checkout') {
-        steps {
-            checkout scm
-        }
+    environment {
+        IMAGE_NAME = "myapp"
+        CONTAINER_NAME = "myapp-container"
+        REPO_URL = "https://github.com/AtharvPol/NewMultibranchProject.git"
     }
 
-    stage('Select Deployment Server') {
-        steps {
-            script {
-                if (env.BRANCH_NAME == "prod") {
-                    env.SERVER_IP = "13.204.80.183"
-                } else if (env.BRANCH_NAME == "dev") {
-                    env.SERVER_IP = "65.0.122.50"
-                } else if (env.BRANCH_NAME == "stage") {
-                    env.SERVER_IP = "113.204.87.161"
-                } else {
-                    error("No deployment server configured for branch ${env.BRANCH_NAME}")
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+                echo "Checked out branch: ${env.BRANCH_NAME}"
+            }
+        }
+
+        stage('Select Deployment Server') {
+            steps {
+                script {
+                    def servers = [
+                        prod: "13.204.80.183",
+                        dev: "65.0.122.50",
+                        stage: "113.204.87.161"
+                    ]
+
+                    env.SERVER_IP = servers[env.BRANCH_NAME]
+
+                    if (!env.SERVER_IP) {
+                        error("❌ No server configured for branch: ${env.BRANCH_NAME}")
+                    }
+
+                    echo "Deploying ${env.BRANCH_NAME} → ${env.SERVER_IP}"
                 }
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                sh """
+                ssh -o StrictHostKeyChecking=no ec2-user@${SERVER_IP} '
+                    set -e
+
+                    echo "🚀 Deployment started for branch ${BRANCH_NAME}"
+
+                    # Go to project directory
+                    cd ~/NewMultibranchProject || git clone ${REPO_URL} ~/NewMultibranchProject
+
+                    cd ~/NewMultibranchProject
+
+                    # Ensure correct branch
+                    git fetch origin
+                    git checkout ${BRANCH_NAME}
+                    git pull origin ${BRANCH_NAME}
+
+                    # Stop old container
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+
+                    # Remove old image
+                    docker rmi ${IMAGE_NAME}:latest || true
+
+                    # Build new image
+                    docker build -t ${IMAGE_NAME}:latest .
+
+                    # Run new container
+                    docker run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p 80:80 \
+                        ${IMAGE_NAME}:latest
+
+                    echo "✅ Deployment completed"
+                '
+                """
             }
         }
     }
 
-    stage('Deploy') {
-        steps {
-            sh """
-            ssh -o StrictHostKeyChecking=no ec2-user@${SERVER_IP} '
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-                docker rmi ${IMAGE_NAME}:latest || true
+    post {
+        success {
+            echo "✅ Deployment successful for ${env.BRANCH_NAME} → ${env.SERVER_IP}"
+        }
 
-                cd ~/NewMultibranchProject
+        failure {
+            echo "❌ Deployment failed for ${env.BRANCH_NAME}"
+        }
 
-                git pull origin ${BRANCH_NAME}
-
-                docker build -t ${IMAGE_NAME}:latest .
-
-                docker run -d \
-                    --name ${CONTAINER_NAME} \
-                    -p 80:80 \
-                    ${IMAGE_NAME}:latest
-            '
-            """
+        always {
+            cleanWs()
         }
     }
-}
-
-post {
-    success {
-        echo "Deployment successful for ${env.BRANCH_NAME} to ${env.SERVER_IP}"
-    }
-
-    failure {
-        echo "Deployment failed for ${env.BRANCH_NAME}"
-    }
-}
-```
-
 }
