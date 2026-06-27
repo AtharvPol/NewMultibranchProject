@@ -20,9 +20,9 @@ pipeline {
             steps {
                 script {
                     def servers = [
-                        prod: "13.204.80.183",
-                        dev: "65.0.122.50",
-                        stage: "113.204.87.161"
+                        prod: "13.203.156.194",
+                        dev: "3.110.56.73",
+                        stage: "15.206.195.228"
                     ]
 
                     env.SERVER_IP = servers[env.BRANCH_NAME]
