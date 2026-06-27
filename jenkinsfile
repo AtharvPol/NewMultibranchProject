@@ -21,7 +21,7 @@ pipeline {
                 script {
                     def servers = [
                         prod: "13.203.156.194",
-                        dev: "3.110.56.7",
+                        dev: "3.110.56.73",
                         stage: "15.206.195.228"
                     ]
 
